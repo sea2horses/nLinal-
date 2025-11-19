@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans+Code:ital,wght@0,300..800;1,300..800&display=swap');
+
+@import 'tailwindcss';
+@plugin 'flyonui' {
+	themes: vscode --default;
+}
+@plugin '@iconify/tailwind4';
+
+@import '../node_modules/flyonui/variants.css'; /* Require only if you want to use FlyonUI JS component */
+
+@source '../node_modules/flyonui/dist/index.js'; /* Require only if you want to use FlyonUI JS component */
+
+@theme {
+	--font-display: 'Google Sans Code', system-ui, sans-serif;
+}
+
+@layer base {
+	* {
+		@apply box-border font-display;
+	}
+
+	.katex,
+	.katex * {
+		font-family: 'KaTeX_Main', 'Times New Roman', serif !important;
+		font-feature-settings: normal;
+		letter-spacing: 0;
+	}
+}
+
+@layer utilities {
+	.flex-center {
+		@apply flex items-center justify-center;
+	}
+}
+
+/* MathLive (math-field) global theme to match FlyonUI's VSCode theme */
+:root {
+	--vscode-bg: rgba(30, 30, 30, 0);
+	--vscode-panel-bg: #252526;
+	--vscode-fg: #d4d4d4;
+	--vscode-accent: #007acc;
+	--vscode-border: #333333;
+	--vscode-muted: #858585;
+	--vscode-selection: rgba(0, 122, 204, 0.18);
+	--math-font-family:
+		'Google Sans Code', ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New',
+		monospace;
+	--math-font-size: 20px;
+}
+
+/* Target MathLive's web component `math-field`. This provides
+   a consistent VSCode-like dark appearance for inline editors. */
+math-field {
+	display: inline-block;
+	width: 100%;
+	min-width: 0;
+	font-family: var(--math-font-family);
+	font-size: var(--math-font-size);
+	line-height: 1.4;
+	color: var(--vscode-fg);
+	background: none;
+	padding: 0.35rem 0.5rem;
+	border: 1px solid var(--color-accent);
+	border-radius: 0px;
+	caret-color: var(--vscode-accent);
+	box-sizing: border-box;
+	overflow: hidden;
+	overflow-x: auto;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+math-field:not(:disabled) {
+	cursor: text;
+}
+
+math-field:disabled {
+	cursor: not-allowed;
+}
+
+math-field:focus,
+math-field:focus-within {
+	outline: none;
+	border-color: var(--vscode-accent);
+	box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.08);
+}
+
+/* Selection inside the math field */
+math-field ::selection {
+	background: var(--vscode-selection);
+	color: inherit;
+}
+
+/* Make sure internal editable content doesn't force width growth */
+math-field,
+math-field * {
+	max-width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+}
+
+/* Provide a subtle placeholder color when empty */
+math-field[placeholder],
+math-field .mf-placeholder {
+	color: var(--vscode-muted);
+}
+
+/* If MathLive exposes parts or specific classes we can tweak color tokens further.
+   These are conservative, non-invasive selectors which won't break if the internals change. */
+math-field ::slotted(*) {
+	color: inherit;
+}
+
+math-field::part(virtual-keyboard-toggle) {
+	display: none;
+}
