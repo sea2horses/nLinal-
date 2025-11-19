@@ -1,5 +1,5 @@
 from fractions import Fraction
-from py.functions.utils.auxiliar import a_fraccion
+from auxiliar import a_fraccion, pretty_print_matrix
 
 
 class Matriz:
@@ -7,10 +7,9 @@ class Matriz:
     matriz: list[list[Fraction]] = []
     filas = 0
     columnas = 0
-    linea = -1
 
     # Constructor de la clase
-    def __init__(self, filas: int, columnas: int, linea: int = -1):
+    def __init__(self, filas: int, columnas: int):
         if filas <= 0 or columnas <= 0:
             # Tiramos un error si alguno de los dos numeros es invalido
             raise Exception(
@@ -57,6 +56,25 @@ class Matriz:
         self._boundcheck_(fila, columna)
         # Explicacion en la funcion d arriba
         self.matriz[fila - 1][columna - 1] = a_fraccion(valor)
+
+    # El metodo to string (para que pueda imprimirse)
+    # este es un metodo por defecto de python, algo asi como el constructor
+    def __str__(self) -> str:
+        return pretty_print_matrix(self.matriz)
+        # # El string
+        # string = ""
+
+        # # Imprimimos la matriz entera
+        # for i in range(0, self.filas):
+        #     for j in range(0, self.columnas):
+        #         # Agregamos la celda
+        #         # Esto se ve complicado pero basicamente solo es imprimir el objeto actual
+        #         # solo dos decimales en float, encerrado entre dos corchetes y una tabulacion al final
+        #         string += "[" + f"{self.matriz[i][j]}" + "]\t"
+        #     # Salto de linea
+        #     string += '\n'
+
+        # return string
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, Matriz):

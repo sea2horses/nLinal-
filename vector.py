@@ -1,5 +1,5 @@
 from fractions import Fraction
-from py.functions.utils.auxiliar import a_fraccion
+from auxiliar import a_fraccion
 
 
 class Vector:
