@@ -1,4 +1,11 @@
 from fractions import Fraction
+from typing import TypeVar, Generic
+
+T = TypeVar("T")
+
+
+def array_top(arr: list[T]) -> T:
+    return arr[len(arr) - 1]
 
 
 def a_fraccion(x: str) -> Fraction:
@@ -7,7 +14,6 @@ def a_fraccion(x: str) -> Fraction:
     """
     try:
         raise NotImplemented
-        return parse_fraction_expr(x)
     except Exception as e:
         raise ValueError(f"Entrada inválida: {x}") from e
 

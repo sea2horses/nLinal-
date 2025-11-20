@@ -1,39 +1,50 @@
 from fractions import Fraction
 from enum import Enum
-from abc import ABC
-from .auxiliar import decimal_a_fraccion
+from abc import ABC, abstractmethod
+from .auxiliar import decimal_a_fraccion, array_top
 
-allowed_commands: list[str] = [
-    "frac",
-    "left",
-    "right",
-    "pi"
-]
+
+class AllowedCommands(Enum):
+    frac = 1
+    left = 2
+    right = 3
+    pi = 4
+    cdot = 5
+
+
+command_map: dict[str, AllowedCommands] = {
+    "frac": AllowedCommands.frac,
+    "left": AllowedCommands.left,
+    "right": AllowedCommands.right,
+    "pi": AllowedCommands.pi,
+    "cdot": AllowedCommands.cdot
+}
 
 
 class TokenType(Enum):
-    COMMAND = 1,
+    COMMAND = 1
 
     # Operators
-    SUM = 3,
-    SUB = 4,
-    # MULT = 5, This is done with the \cdot command
-    # DIV = 6, This already will be expressed as a fraction
-    POW = 9
+    SUM = 2
+    MINUS = 3
+    POW = 4
+    SUBSCRIPT = 5
 
     # Special Characters
-    OPEN_PARENTHESES = 7,
-    CLOSE_PARENTHESES = 8,
+    LPARENTHESES = 6
+    RPARENTHESES = 7
 
     # Braces
-    OPEN_BRACE = 11,
-    CLOSE_BRACE = 12,
+    LBRACE = 8
+    RBRACE = 9
 
     # Other tokens
-    DIGIT = 9,
-    PERIOD = 0
+    DIGIT = 10
+    PERIOD = 11
 
-    EOF = 5
+    CHAR = 12
+
+    EOF = 13
 
 
 class Token:
@@ -67,7 +78,7 @@ class Lexer:
         while self.current_char is not None and self.current_char.isalpha():
             self.advance()
         cmd = self.text[start:self.pos]
-        if cmd not in allowed_commands:
+        if cmd not in command_map:
             raise ValueError(f"Unsupported LaTeX command '\\{cmd}'")
         return Token(TokenType.COMMAND, cmd)
 
@@ -79,40 +90,53 @@ class Lexer:
             return Token(TokenType.EOF)
 
         if self.current_char.isdigit():
-            return Token(TokenType.DIGIT, self.current_char)
-        else:
-            tok: TokenType | None = None
+            ch = self.current_char
+            self.advance()
+            return Token(TokenType.DIGIT, ch)
 
-            match self.current_char:
-                case '\\':
-                    return self.command()
-                case '{':
-                    tok = TokenType.OPEN_BRACE
-                case '}':
-                    tok = TokenType.CLOSE_BRACE
-                case '(':
-                    tok = TokenType.OPEN_PARENTHESES
-                case ')':
-                    tok = TokenType.CLOSE_PARENTHESES
-                case '+':
-                    tok = TokenType.SUM
-                case '-':
-                    tok = TokenType.SUB
-                case '^':
-                    tok = TokenType.POW
-                case '.':
-                    tok = TokenType.PERIOD
+        if self.current_char.isalpha():
+            ch = self.current_char
+            self.advance()
+            return Token(TokenType.CHAR, ch)
 
-            if tok is not None:
-                return Token(tok)
-            else:
-                raise ValueError(f"Unrecognized token: {self.current_char}")
+        tok: TokenType | None = None
+        match self.current_char:
+            case '\\':
+                return self.command()
+            case '{':
+                tok = TokenType.LBRACE
+            case '}':
+                tok = TokenType.RBRACE
+            case '(':
+                tok = TokenType.LPARENTHESES
+            case ')':
+                tok = TokenType.RPARENTHESES
+            case '+':
+                tok = TokenType.SUM
+            case '-':
+                tok = TokenType.MINUS
+            case '^':
+                tok = TokenType.POW
+            case '.':
+                tok = TokenType.PERIOD
+            case '_':
+                tok = TokenType.SUBSCRIPT
+
+        if tok is not None:
+            ch = self.current_char
+            self.advance()
+            # important: store the character itself as `value` (esp. for '.')
+            return Token(tok, ch)
+
+        raise ValueError(f"Unrecognized token: {self.current_char}")
 
     def tokenize(self) -> list[Token]:
         token_list: list[Token] = []
 
         while self.current_char is not None:
             t = self.get_token()
+            if t.type == TokenType.EOF:
+                break
             token_list.append(t)
 
         return token_list
@@ -121,6 +145,24 @@ class Lexer:
 # Clase abstracta
 class AST(ABC):
     pass
+
+
+class ICommandParser(ABC):
+    @abstractmethod
+    def parsefrac(self) -> AST:
+        pass
+
+    @abstractmethod
+    def parseleft(self) -> AST:
+        pass
+
+    @abstractmethod
+    def parseright(self) -> AST:
+        pass
+
+    @abstractmethod
+    def parsepi(self) -> AST:
+        pass
 
 
 class NumberAST(AST):
@@ -134,17 +176,40 @@ class NumberAST(AST):
         return f"Number({self.value})"
 
 
+class VariableAST(AST):
+    def __init__(self, id: str) -> None:
+        self.id = id
+
+    def __str__(self) -> str:
+        return self.id.__str__()
+
+    def __repr__(self) -> str:
+        return f"Variable({self.id})"
+
+
 class OperationTypes(Enum):
-    SUM = 1,
-    SUBTRACT = 2,
-    MULTIPLY = 3,
-    DIVIDE = 4,
+    SUM = 1
+    SUBTRACT = 2
+    MULTIPLY = 3
+    DIVIDE = 4
     POWER = 5
 
 
 allowed_unaries: list[OperationTypes] = [
     OperationTypes.SUBTRACT
 ]
+
+operation_precedences: dict[OperationTypes, int] = {
+    OperationTypes.SUM: 13,
+    OperationTypes.SUBTRACT: 13,
+    OperationTypes.MULTIPLY: 14,
+    OperationTypes.DIVIDE: 14,
+    OperationTypes.POWER: 15
+}
+
+
+def precedence(op: OperationTypes):
+    return operation_precedences[op]
 
 
 class BinOpAST(AST):
@@ -164,8 +229,11 @@ class UnaryOpAST(AST):
         self.op: OperationTypes = op
         self.part: AST = part
 
+    def __repr__(self) -> str:
+        return f"UnaryOp({self.op}, {self.part})"
 
-class Parser:
+
+class Parser(ICommandParser):
     def __init__(self, text: str) -> None:
         lexer = Lexer(text)
         self.tokens: list[Token] = lexer.tokenize()
@@ -178,278 +246,261 @@ class Parser:
         self.current_token = self.tokens[self.current_pos] if self.tokens and self.current_pos < len(
             self.tokens) else None
 
-    def eat_token(self, type: TokenType):
+    def eat_token(self, type: TokenType) -> str:
         if self.current_token is None or self.current_token.type != type:
             raise Exception(
                 f"Was expecting token of type {type}")
-
+        value = self.current_token.value
         self.advance()
+
+        return value
+
+    def eat_command(self) -> AllowedCommands:
+        return command_map[self.eat_token(TokenType.COMMAND)]
+
+    # Operator precedence (checks if an operator exists even)
+    def parse_operator(self) -> OperationTypes | None:
+        tok = self.current_token
+        if tok is None:
+            return None
+
+        match tok.type:
+            case TokenType.COMMAND:
+                cmd = command_map[tok.value]
+                if cmd == AllowedCommands.cdot:
+                    self.eat_token(TokenType.COMMAND)
+                    return OperationTypes.MULTIPLY
+            case TokenType.POW:
+                self.eat_token(TokenType.POW)
+                return OperationTypes.POWER
+            case TokenType.SUM:
+                self.eat_token(TokenType.SUM)
+                return OperationTypes.SUM
+            case TokenType.MINUS:
+                self.eat_token(TokenType.MINUS)
+                return OperationTypes.SUBTRACT
+        return None
 
     # Long form argument groups and builds numbers transforming them into their full version
     # Short form operands let stuff like \frac45 consider 4 and 5 as different arguments,
     # long form will group them together to form 45
-    def parse_operand(self, long_form: bool = True) -> AST:
-        if self.current_token is None:
-            raise Exception("Expected Operand")
+    def get_token_as_operand(self, long_form: bool = True) -> AST | None:
+        tok = self.current_token
+        if tok is None:
+            return None
 
-        match self.current_token.type:
+        # Check if we're on an operator (Unary parsing)
+        op = self.parse_operator()
+        if op is not None:
+            dest: AST | None = self.parse_operand()
+            if dest is None:
+                raise Exception("Expected operand after unary operator")
+            return UnaryOpAST(dest, op)
+
+        # Commands that behave like operands: \frac, \pi, \left...
+        if tok.type == TokenType.COMMAND:
+            cmd: AllowedCommands = command_map[tok.value]
+            match cmd:
+                case AllowedCommands.frac:
+                    self.eat_token(TokenType.COMMAND)
+                    return self.parsefrac()
+                case AllowedCommands.left:
+                    self.eat_token(TokenType.COMMAND)
+                    return self.parseleft()
+                case AllowedCommands.pi:
+                    self.eat_token(TokenType.COMMAND)
+                    return self.parsepi()
+            return None
+
+        match tok.type:
             case TokenType.DIGIT:
                 if long_form:
                     return self.collapse_number()
                 else:
-                    return NumberAST(Fraction(int(self.current_token.value)))
+                    d = self.eat_token(TokenType.DIGIT)
+                    return NumberAST(Fraction(int(d)))
+
+            case TokenType.CHAR:
+                c = self.eat_token(TokenType.CHAR)
+                return VariableAST(c)
+
+            case TokenType.LPARENTHESES:
+                self.eat_token(TokenType.LPARENTHESES)
+                expr = self.parse_expression()
+                self.eat_token(TokenType.RPARENTHESES)
+                return expr
+
+            case TokenType.LBRACE:
+                self.eat_token(TokenType.LBRACE)
+                expr = self.parse_expression()
+                self.eat_token(TokenType.RBRACE)
+                return expr
+        return None
+
+    def parse_operand(self, long_form=True) -> AST:
+        r: AST | None = self.get_token_as_operand(long_form)
+        if r is None:
+            raise Exception("Expected Operand")
+        return r
 
     def collapse_number(self) -> AST:
-        # Create number using a series of tokens
-        saw_dot: bool = False
+        chars: list[str] = []
 
-        while self.current_token is not None and \
-                (self.current_token.type == TokenType.DIGIT or self.current_token.type == TokenType.PERIOD):
+        while (
+            self.current_token is not None
+            and self.current_token.type in (TokenType.DIGIT, TokenType.PERIOD)
+        ):
+            chars.append(self.current_token.value)
+            self.advance()
+
+        num_str = "".join(chars)      # e.g. "12.5"
+        frac = decimal_a_fraccion(num_str)
+        return NumberAST(frac)
+
+    def parsefrac(self) -> AST:
+        """
+        Assumes '\\frac' has already been consumed.
+
+        Supports:
+            - \\frac12  (short form: single-digit operands)
+            - \\frac{1}{2}  (long form: full expressions)
+        """
+
+        numerator = self.parse_operand(long_form=False)
+        denominator = self.parse_operand(long_form=False)
+
+        return BinOpAST(numerator, OperationTypes.DIVIDE, denominator)
+
+    def parsepi(self) -> AST:
+        raise NotImplementedError("parsepi not implemented yet")
+
+    def parseleft(self) -> AST:
+        """
+        Parse \\left( expr \\right) style groups.
+        Assumes 'left' command has already been consumed.
+        """
+        if self.current_token is None or self.current_token.type != TokenType.LPARENTHESES:
+            raise Exception("Expected '(' after \\left")
+
+        self.eat_token(TokenType.LPARENTHESES)
+        expr = self.parse_expression()
+
+        # Right command
+        m = self.eat_command()
+        if m != AllowedCommands.right:
+            raise Exception("Expected \\right directive")
+
+        self.eat_token(TokenType.RPARENTHESES)
+        return expr
+
+    def parseright(self) -> AST:
+        # Bare \right shouldn't really appear as an operand: treat as no-op.
+        raise Exception("\\right without \\left directive")
+
+    def expr_to_postfix(self) -> list[AST | OperationTypes]:
+        opstack: list[OperationTypes] = []
+        totalstack: list[AST | OperationTypes] = []
+
+        # Obligatory first operand
+        totalstack.append(self.parse_operand())
+
+        m: OperationTypes | None = self.parse_operator()
+        while m is not None:
+            while len(opstack) != 0 and precedence(m) <= precedence(array_top(opstack)):
+                last = opstack.pop()
+                totalstack.append(last)
+            opstack.append(m)
+
+            totalstack.append(self.parse_operand())
+            m = self.parse_operator()
+
+        while len(opstack) != 0:
+            totalstack.append(opstack.pop())
+
+        return totalstack
+
+    def postfix_parse(self, postfix: list[AST | OperationTypes]) -> AST:
+        stack: list[AST] = []
+        for item in postfix:
+            if isinstance(item, AST):
+                stack.append(item)
+            else:
+                # binary op: pop right then left
+                if len(stack) < 2:
+                    raise Exception("Invalid postfix expression")
+                rhs = stack.pop()
+                lhs = stack.pop()
+                stack.append(BinOpAST(lhs, item, rhs))
+
+        if len(stack) != 1:
+            raise Exception("Invalid postfix expression")
+
+        return stack[0]
 
     def parse_expression(self) -> AST:
-        pass
+        return self.postfix_parse(self.expr_to_postfix())
 
-        # # ---------- AST Nodes ----------
+# ===== Evaluator =====
 
-        # class AST:
-        #     pass
 
-        # class Number(AST):
-        #     def __init__(self, value: int):
-        #         self.value = value
+def eval_ast(node: AST, env: dict[str, Fraction] | None = None) -> Fraction:
+    """
+    Evaluate an AST into a Python Fraction.
 
-        #     def __repr__(self):
-        #         return f"Number({self.value})"
+    env: optional mapping from variable name -> Fraction
+    """
+    if env is None:
+        env = {}
 
-        # class FractionNode(AST):
-        #     def __init__(self, numerator: AST, denominator: AST):
-        #         self.numerator = numerator
-        #         self.denominator = denominator
+    # Numbers
+    if isinstance(node, NumberAST):
+        return node.value
 
-        #     def __repr__(self):
-        #         return f"FractionNode({self.numerator!r}, {self.denominator!r})"
+    # Variables
+    if isinstance(node, VariableAST):
+        if node.id in env:
+            return env[node.id]
+        raise ValueError(f"Unknown variable '{node.id}' in expression")
 
-        # class UnaryOp(AST):
-        #     def __init__(self, op: str, operand: AST):
-        #         self.op = op
-        #         self.operand = operand
+    # Unary ops (only SUBTRACT is allowed by your AST)
+    if isinstance(node, UnaryOpAST):
+        val = eval_ast(node.part, env)
+        if node.op == OperationTypes.SUBTRACT:
+            return -val
+        raise ValueError(f"Unsupported unary operation {node.op}")
 
-        #     def __repr__(self):
-        #         return f"UnaryOp({self.op!r}, {self.operand!r})"
+    # Binary ops
+    if isinstance(node, BinOpAST):
+        left = eval_ast(node.lhs, env)
+        right = eval_ast(node.rhs, env)
 
-        # class BinaryOp(AST):
-        #     def __init__(self, left: AST, op: str, right: AST):
-        #         self.left = left
-        #         self.op = op
-        #         self.right = right
+        if node.op == OperationTypes.SUM:
+            return left + right
+        if node.op == OperationTypes.SUBTRACT:
+            return left - right
+        if node.op == OperationTypes.MULTIPLY:
+            return left * right
+        if node.op == OperationTypes.DIVIDE:
+            if right == 0:
+                raise ZeroDivisionError("Division by zero")
+            return left / right
+        if node.op == OperationTypes.POWER:
+            # Require integer exponent
+            if right.denominator != 1:
+                raise ValueError(
+                    "Non-integer exponent not supported for Fraction")
+            exp = right.numerator
+            return left ** exp
 
-        #     def __repr__(self):
-        #         return f"BinaryOp({self.left!r}, {self.op!r}, {self.right!r})"
+        raise ValueError(f"Unsupported binary operation {node.op}")
 
-        # # ---------- Parser (recursive descent) ----------
+    raise TypeError(f"Unknown AST node type: {type(node)}")
 
-        # class Parser:
-        #     def __init__(self, text: str):
-        #         self.lexer = Lexer(text)
-        #         self.current_token = self.lexer.get_next_token()
 
-        #     def eat(self, token_type: str):
-        #         if self.current_token.type == token_type:
-        #             self.current_token = self.lexer.get_next_token()
-        #         else:
-        #             raise ValueError(
-        #                 f"Expected token {token_type}, got {self.current_token.type}"
-        #             )
-
-        #     def parse(self) -> AST:
-        #         node = self.expr()
-        #         if self.current_token.type != "EOF":
-        #             raise ValueError(f"Unexpected token at end: {self.current_token}")
-        #         return node
-
-        #     # expr : term (('PLUS' | 'MINUS') term)*
-        #     def expr(self):
-        #         node = self.term()
-        #         while self.current_token.type in ("PLUS", "MINUS"):
-        #             op = self.current_token
-        #             self.eat(op.type)
-        #             right = self.term()
-        #             node = BinaryOp(node, op.value, right)
-        #         return node
-
-        #     # term : unary (('STAR' | 'SLASH') unary)*
-        #     def term(self):
-        #         node = self.unary()
-        #         while self.current_token.type in ("STAR", "SLASH"):
-        #             op = self.current_token
-        #             self.eat(op.type)
-        #             right = self.unary()
-        #             node = BinaryOp(node, op.value, right)
-        #         return node
-
-        #     # unary : ('PLUS' | 'MINUS') unary | power
-        #     def unary(self):
-        #         if self.current_token.type in ("PLUS", "MINUS"):
-        #             op = self.current_token
-        #             self.eat(op.type)
-        #             operand = self.unary()
-        #             return UnaryOp(op.value, operand)
-        #         return self.power()
-
-        #     # power : primary ('CARET' unary)?
-        #     def power(self):
-        #         node = self.primary()
-        #         if self.current_token.type == "CARET":
-        #             self.eat("CARET")
-        #             right = self.unary()
-        #             node = BinaryOp(node, '^', right)
-        #         return node
-
-        #     # primary : NUMBER | FRAC-group | (LPAREN expr RPAREN) | (LBRACE expr RBRACE)
-        #     def primary(self):
-        #         tok = self.current_token
-
-        #         if tok.type == "NUMBER":
-        #             self.eat("NUMBER")
-        #             return Number(tok.value)
-
-        #         if tok.type == "FRAC":
-        #             return self.frac()
-
-        #         if tok.type == "LPAREN":
-        #             self.eat("LPAREN")
-        #             node = self.expr()
-        #             self.eat("RPAREN")
-        #             return node
-
-        #         if tok.type == "LBRACE":
-        #             # treat {...} like parentheses at top-level too
-        #             return self.braced_expr()
-
-        #         raise ValueError(f"Unexpected token in primary(): {tok}")
-
-        #     # braced_expr : LBRACE expr RBRACE
-        #     def braced_expr(self):
-        #         self.eat("LBRACE")
-        #         node = self.expr()
-        #         self.eat("RBRACE")
-        #         return node
-
-        #     # frac : 'FRAC' group group
-        #     # group : '{' expr '}' | primary (single token)
-        #     def frac(self):
-        #         self.eat("FRAC")
-        #         num = self.frac_group()
-        #         den = self.frac_group()
-        #         return FractionNode(num, den)
-
-        #     def frac_group(self):
-        #         if self.current_token.type == "LBRACE":
-        #             return self.braced_expr()
-        #         # unbraced: LaTeX-style single token argument
-        #         return self.primary()
-
-        # # ---------- Evaluation to Fraction ----------
-
-        # def eval_ast(node: AST) -> Fraction:
-        #     if isinstance(node, Number):
-        #         return Fraction(node.value, 1)
-
-        #     if isinstance(node, FractionNode):
-        #         num = eval_ast(node.numerator)
-        #         den = eval_ast(node.denominator)
-        #         if den == 0:
-        #             raise ZeroDivisionError("Division by zero in \\frac")
-        #         return num / den
-
-        #     if isinstance(node, UnaryOp):
-        #         val = eval_ast(node.operand)
-        #         if node.op == '+':
-        #             return val
-        #         elif node.op == '-':
-        #             return -val
-        #         else:
-        #             raise ValueError(f"Unknown unary op {node.op}")
-
-        #     if isinstance(node, BinaryOp):
-        #         left = eval_ast(node.left)
-        #         right = eval_ast(node.right)
-        #         if node.op == '+':
-        #             return left + right
-        #         elif node.op == '-':
-        #             return left - right
-        #         elif node.op == '*':
-        #             return left * right
-        #         elif node.op == '/':
-        #             if right == 0:
-        #                 raise ZeroDivisionError("Division by zero")
-        #             return left / right
-        #         elif node.op == '^':
-        #             # exponent should be integer ideally
-        #             if not (right.denominator == 1):
-        #                 raise ValueError("Fractional exponents not supported")
-        #             return left ** right.numerator
-        #         else:
-        #             raise ValueError(f"Unknown binary op {node.op}")
-
-        #     raise ValueError(f"Unknown AST node type: {type(node)}")
-
-        # # ---------- Convert AST back to Python 'Fraction(...)' expression ----------
-
-        # def ast_to_python(node: AST) -> str:
-        #     if isinstance(node, Number):
-        #         return f"Fraction({node.value}, 1)"
-
-        #     if isinstance(node, FractionNode):
-        #         num = ast_to_python(node.numerator)
-        #         den = ast_to_python(node.denominator)
-        #         return f"({num} / {den})"
-
-        #     if isinstance(node, UnaryOp):
-        #         expr = ast_to_python(node.operand)
-        #         if node.op == '-':
-        #             return f"(-{expr})"
-        #         return f"(+{expr})"
-
-        #     if isinstance(node, BinaryOp):
-        #         left = ast_to_python(node.left)
-        #         right = ast_to_python(node.right)
-        #         if node.op == '^':
-        #             return f"({left} ** {right})"
-        #         return f"({left} {node.op} {right})"
-
-        #     raise ValueError(f"Unknown AST node type: {type(node)}")
-
-        # # ---------- Convenience wrappers ----------
-
-        # def parse_fraction_expr(text: str) -> Fraction:
-        #     """
-        #     Parse a LaTeX-ish math string and return a Python Fraction value.
-        #     """
-        #     ast = Parser(text).parse()
-        #     return eval_ast(ast)
-
-        # def to_python_fraction_expr(text: str) -> str:
-        #     """
-        #     Parse and return a string of Python code using Fraction(...).
-        #     """
-        #     ast = Parser(text).parse()
-        #     return ast_to_python(ast)
-
-        # # ---------- Demo ----------
-
-        # if __name__ == "__main__":
-        #     examples = [
-        #         r"\frac43",
-        #         r"\frac{4}{3}",
-        #         r"5 + 6",
-        #         r"\frac12 + \frac{3}{4}",
-        #         r"3/4 + 1/2",
-        #         r"-\frac{1}{2} * (3 + 5)",
-        #         r"(\frac{2}{3})^2",
-        #     ]
-
-        #     for s in examples:
-        #         value = parse_fraction_expr(s)
-        #         code = to_python_fraction_expr(s)
-        #         print(f"{s!r} => {value}   (Python: {code})")
+def eval_latex(expr: str, env: dict[str, Fraction] | None = None) -> Fraction:
+    """
+    Convenience: parse a LaTeX-ish expression and evaluate to a Fraction.
+    """
+    parser = Parser(expr)
+    ast = parser.parse_expression()
+    return eval_ast(ast, env)
