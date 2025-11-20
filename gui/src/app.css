@@ -2,7 +2,7 @@
 
 @import 'tailwindcss';
 @plugin 'flyonui' {
-	themes: vscode --default;
+	themes: vscode --default, light, dark, pastel, corporate;
 }
 @plugin '@iconify/tailwind4';
 

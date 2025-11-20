@@ -9,10 +9,10 @@
 
 	const themeOptions: ThemeOption[] = [
 		{ id: 'vscode', label: 'VS Code', description: 'Tema oscuro inspirado en VS Code.' },
-		{ id: 'winter', label: 'Winter', description: 'Contraste suave ideal para impresiones.' },
-		{ id: 'forest', label: 'Forest', description: 'Verdes profundos para sesiones largas.' },
-		{ id: 'dracula', label: 'Dracula', description: 'Alta saturación tipo hacking.' },
-		{ id: 'business', label: 'Business', description: 'Neutro profesional.' }
+		{ id: 'light', label: 'Light', description: 'Contraste suave ideal para impresiones.' },
+		{ id: 'dark', label: 'Dark', description: 'Verdes profundos para sesiones largas.' },
+		{ id: 'pastel', label: 'Pastel', description: 'Alta saturación tipo hacking.' },
+		{ id: 'corporate', label: 'Corporate', description: 'Neutro profesional.' }
 	];
 
 	const storedTheme =
